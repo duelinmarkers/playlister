@@ -1,8 +1,7 @@
 (ns playlister.db
   (:require [clojure.java.jdbc :as sql]
             [cheshire.core :as json]
-            [clojure.java.io :as io]
-            [playlister.download :as download])
+            [playlister.downloads :as downloads])
   (:import [java.time LocalDateTime]
            [java.time.format DateTimeFormatter]))
 
@@ -18,44 +17,47 @@
            [:track_name :text]
            [:collection_name :text]
            [:start_time :text]
-           [:end_time :text]
            [:duration :numeric]
-           [:npr_song_id :text]
-           [:npr_episode_id :text]
+           [:npr_play_id :text]
+           [:program_name :text]
+           [:npr_airing_id :text]
+           [:npr_event_id :text]
            [:npr_program_id :text])]]]
     (sql/with-db-connection [conn db]
       (doseq [statement statements]
         (sql/execute! conn statement)))))
 
-(defn tracks-files [data-dir]
-  (-> (io/file data-dir)
-      (.listFiles (reify java.io.FilenameFilter
-                    (accept [_ _ name]
-                      (boolean (re-find #"tracks-.+\.json" name)))))
-      (->> (sort-by #(.getName %)))))
+(def start-time-format (DateTimeFormatter/ofPattern "MM-dd-yyyy HH:mm:ss"))
 
-(defn json-time->db-time [s]
+(defn start-time->db-time [s]
   (-> s
-      (LocalDateTime/parse download/song-start-end-time-format)
+      (LocalDateTime/parse start-time-format)
       (.format DateTimeFormatter/ISO_LOCAL_DATE_TIME)))
 
 (defn load-from-files [db data-dir]
   (sql/with-db-connection [conn db]
-    (doseq [file (tracks-files data-dir)]
-      (let [parsed-body (json/parse-string (slurp file) true)
-            results (-> parsed-body :tracklist :results)]
+    (doseq [file (downloads/sorted-day-files data-dir)
+            :let [parsed-body (json/parse-string (slurp file) true)
+                  airings (:onToday parsed-body)]
+            airing airings
+            :let [{:keys [playlist program program_id _id event_id]} airing]]
+      (if (seq playlist)
         (apply sql/insert! conn :plays
-           (map (fn [{:keys [song song_id]}]
-                  {:artist_name (:artistName song)
-                   :track_name (:trackName song)
-                   :collection_name (:collectionName song)
-                   :start_time (json-time->db-time (:_start_time song))
-                   :end_time (json-time->db-time (:_end_time song))
-                   :duration (:_duration song)
-                   :npr_song_id song_id
-                   :npr_episode_id (:_episode_id song)
-                   :npr_program_id (:_program_id song)})
-                results))))))
+               (map (fn [{:keys [_duration _start_time collectionName trackName artistName]
+                          npr-play-id :_id}]
+                      {:artist_name     artistName
+                       :track_name      trackName
+                       :collection_name collectionName
+                       :start_time      (start-time->db-time _start_time)
+                       :duration        _duration
+                       :npr_play_id     npr-play-id
+                       :program_name    (:name program)
+                       :npr_airing_id   _id
+                       :npr_event_id    event_id
+                       :npr_program_id  program_id})
+                    playlist))
+        (println "No playlist to insert for" (:name program)
+                 "from" (downloads/file->name file))))))
 
 (comment
   (recreate db)
