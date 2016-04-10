@@ -1,8 +1,8 @@
 (ns playlister.downloads
   (:require [clj-http.lite.client :as client]
             [clojure.java.io :as io])
-  (:import [java.time LocalDate]
-           [java.time.format DateTimeFormatter]
+  (:import (java.time LocalDate)
+           (java.time.format DateTimeFormatter)
            (java.io File FilenameFilter)))
 
 (def date-format DateTimeFormatter/ISO_LOCAL_DATE)
