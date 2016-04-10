@@ -1,9 +1,8 @@
 (ns playlister.db
   (:require [clojure.java.jdbc :as sql]
-            [cheshire.core :as json]
+            [playlister.json :as json]
             [playlister.downloads :as downloads])
-  (:import [java.time LocalDateTime]
-           [java.time.format DateTimeFormatter]))
+  (:import [java.time.format DateTimeFormatter]))
 
 (def db {:classname "org.sqlite.JDBC" :subprotocol "sqlite" :subname "data/plays.db"})
 
@@ -27,38 +26,39 @@
       (doseq [statement statements]
         (sql/execute! conn statement)))))
 
-(def start-time-format (DateTimeFormatter/ofPattern "MM-dd-yyyy HH:mm:ss"))
+(defn local-date-time->db-time [s]
+  (.format s DateTimeFormatter/ISO_LOCAL_DATE_TIME))
 
-(defn start-time->db-time [s]
-  (-> s
-      (LocalDateTime/parse start-time-format)
-      (.format DateTimeFormatter/ISO_LOCAL_DATE_TIME)))
+(defn airing&play->db-row-map
+  [{:keys [program program_id _id event_id]}
+   {:keys [_duration _start_time collectionName trackName artistName] npr-play-id :_id}]
+  {:artist_name     artistName
+   :track_name      trackName
+   :collection_name collectionName
+   :start_time      (-> _start_time
+                        json/start-time->local-date-time
+                        local-date-time->db-time)
+   :duration        _duration
+   :npr_play_id     npr-play-id
+   :program_name    (:name program)
+   :npr_airing_id   _id
+   :npr_event_id    event_id
+   :npr_program_id  program_id})
 
 (defn load-from-files [db data-dir]
   (sql/with-db-connection [conn db]
     (doseq [file (downloads/sorted-day-files data-dir)
-            :let [parsed-body (json/parse-string (slurp file) true)
+            :let [parsed-body (json/parse (slurp file))
                   airings (:onToday parsed-body)]
-            airing airings
-            :let [{:keys [playlist program program_id _id event_id]} airing]]
+            {:keys [playlist program] :as airing} airings]
       (if (seq playlist)
         (apply sql/insert! conn :plays
-               (map (fn [{:keys [_duration _start_time collectionName trackName artistName]
-                          npr-play-id :_id}]
-                      {:artist_name     artistName
-                       :track_name      trackName
-                       :collection_name collectionName
-                       :start_time      (start-time->db-time _start_time)
-                       :duration        _duration
-                       :npr_play_id     npr-play-id
-                       :program_name    (:name program)
-                       :npr_airing_id   _id
-                       :npr_event_id    event_id
-                       :npr_program_id  program_id})
+               (map (partial airing&play->db-row-map airing)
                     playlist))
         (println "No playlist to insert for" (:name program)
                  "from" (downloads/file->name file))))))
 
 (comment
   (recreate db)
+  (load-from-files db "./data")
   )
