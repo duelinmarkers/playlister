@@ -1,12 +1,34 @@
 # playlister
 
-KUTX playlist analysis stuff.
+[KUTX](http://kutx.org) sources its [public playlist](http://kutx.org/playlist) 
+from an API hosted on `api.composer.nprstations.org`.
+They provide interactive HTML documentation for quite a large API, though much of it
+requires authentication, and I don't have credentials.
+I'm using one of the endpoints that page uses to build a database of every play of
+every song on KUTX and having fun with the data.
 
-This is just a sandbox at this point.
+## The Source API
 
-## Usage
+Interactive HTML documentation is available at https://api.composer.nprstations.org/.
 
-Only via the REPL, for now.
+I'm using the [widget-day](https://api.composer.nprstations.org/#!/widget/Day_get_3)
+endpoint to download all plays, one day at a time.
+
+[`playlister.downloads`](https://github.com/duelinmarkers/playlister/blob/master/src/playlister/db.clj) 
+hits the API and saves the JSON responses in the data directory.
+
+## ETL
+
+[`playlister.db`](https://github.com/duelinmarkers/playlister/blob/master/src/playlister/downloads.clj) 
+creates a [sqlite](https://www.sqlite.org/) database and populates it from the JSON data files.
+
+## Run It Yourself
+
+Interface is only via the REPL, for now.
+
+```
+lein repl
+```
 
 ## License
 
